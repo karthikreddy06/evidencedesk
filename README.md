@@ -25,12 +25,14 @@ EvidenceDesk pairs an Atlassian Rovo agent with deterministic Forge action handl
 
 Registered in [`src/controls/registry.js`](src/controls/registry.js):
 
-- **C1** ([`src/controls/c1-done-assignee-resolution.js`](src/controls/c1-done-assignee-resolution.js)): Every Jira issue in status `Done` has an assignee and a resolution.
+- **C1** ([`src/controls/c1-done-assignee-resolution.js`](src/controls/c1-done-assignee-resolution.js)): Every Jira issue in `statusCategory = Done` has an assignee and a resolution.
+- **C2** ([`src/controls/c2-policy-review-date.js`](src/controls/c2-policy-review-date.js)): Confluence pages labeled `policy` have a latest version date within 365 days.
+- **C3** ([`src/controls/c3-traceability.js`](src/controls/c3-traceability.js)): Done Jira issues of type `Change`, `Task`, or `Story` have at least one issue link or remote link.
+- **C4** ([`src/controls/c4-segregation-of-duties.js`](src/controls/c4-segregation-of-duties.js)): Assigned Done Jira issues of type `Change` have distinct assignee and reporter accounts.
+- **C5** ([`src/controls/c5-timeliness.js`](src/controls/c5-timeliness.js)): Resolved Jira `Bug` issues with priority `Highest` or `Critical` are resolved within 7 days.
 
 ### Planned
 
-- Confluence policy review dates
-- Changes linked to tickets
 - Audit evidence pack Confluence page generation
 - Teamwork Graph write-back
 - Atlassian MCP server integration
@@ -38,19 +40,21 @@ Registered in [`src/controls/registry.js`](src/controls/registry.js):
 ## Architecture
 
 - **Forge app** (`manifest.yml`):
-  - `rovo:agent` module (`EvidenceDesk`) with instructions to call `check-control` and report only returned data
-  - `action` module (`check-control`) backed by `checkControl` in `src/index.js`
-  - Minimal scope: `read:jira-work`
+  - `rovo:agent` module (`EvidenceDesk`) with instructions to call `check-control` for single controls or `run-audit` for full audit readiness checks
+  - `action` modules: `check-control` (`checkControl`) and `run-audit` (`runAudit`) in `src/index.js`
+  - Minimal scopes: `read:jira-work`, `read:label:confluence`, `read:page:confluence`
 - **Modular controls** (`src/controls/`):
   - `src/controls/types.js`: shared result shape (`ControlResult`) and `buildControlResult` helper
-  - `src/controls/registry.js`: control lookup registry (`getControl`, `listControlIds`)
-  - One file per control under `src/controls/` (currently `c1-done-assignee-resolution.js`)
+  - `src/controls/jira-client.js`: shared Jira REST API v3 search/pagination and site URL helper
+  - `src/controls/registry.js`: control lookup registry (`getControl`, `listControlIds`, `listControls`)
+  - One file per control under `src/controls/` (`C1`–`C5`)
 
 ## Tech
 
 - Atlassian Forge (`@forge/api`)
 - Atlassian Rovo (`rovo:agent`)
-- Jira Cloud REST API v3 (`/rest/api/3/search/jql`, `/rest/api/3/serverInfo`)
+- Jira Cloud REST API v3 (`/rest/api/3/search/jql`, `/rest/api/3/serverInfo`, `/rest/api/3/issue/{key}/remotelink`)
+- Confluence Cloud REST API v2 (`/wiki/api/v2/labels`, `/wiki/api/v2/labels/{id}/pages`)
 - Node.js
 
 ## Setup
