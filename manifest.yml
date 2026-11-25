@@ -44,6 +44,8 @@ modules:
 permissions:
   scopes:
     - read:jira-work
+    - read:label:confluence
+    - read:page:confluence
 app:
   runtime:
     name: nodejs24.x

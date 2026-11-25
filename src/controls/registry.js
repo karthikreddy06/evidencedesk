@@ -1,10 +1,12 @@
 import { controlC1 } from './c1-done-assignee-resolution.js';
+import { controlC2 } from './c2-policy-review-date.js';
 import { controlC3 } from './c3-traceability.js';
 import { controlC4 } from './c4-segregation-of-duties.js';
 import { controlC5 } from './c5-timeliness.js';
 
 const CONTROLS = new Map([
   [controlC1.id, controlC1],
+  [controlC2.id, controlC2],
   [controlC3.id, controlC3],
   [controlC4.id, controlC4],
   [controlC5.id, controlC5],
