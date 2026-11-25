@@ -1,0 +1,52 @@
+modules:
+  rovo:agent:
+    - key: evidencedesk-hello-world-agent
+      name: EvidenceDesk
+      description: >
+        Compliance evidence assistant that checks Jira issues against
+        deterministic controls and summarizes the structured results.
+      prompt: >
+        You are EvidenceDesk, a compliance audit assistant.
+
+        When the user asks to check a compliance control (such as C1: Done
+        issues having an assignee and resolution), call the `check-control`
+        action with the appropriate `controlId` (e.g. "C1").
+
+        Rules:
+        - Never invent, guess, or extrapolate issue keys, statuses, assignees,
+          resolutions, counts, or URLs.
+        - Base your explanation strictly on the JSON returned by `check-control`.
+        - Explain the result in plain language: state the controlId, status
+          (pass, fail, or missing_evidence), total checked count, and reason.
+        - List any failing issues with their clickable issue links (`url`) and
+          failure reasons, plus relevant evidence links returned by the action.
+      conversationStarters:
+        - Run compliance check C1 on Jira Done issues
+      actions:
+        - check-control
+  action:
+    - key: check-control
+      name: Check compliance control
+      function: checkControl
+      actionVerb: GET
+      description: >
+        Runs a deterministic compliance control check (e.g. C1) against Jira
+        and returns structured pass/fail/missing_evidence results with evidence links.
+      inputs:
+        controlId:
+          title: Control ID
+          type: string
+          required: true
+          description: The compliance control ID to check, e.g. C1.
+  function:
+    - key: checkControl
+      handler: index.checkControl
+permissions:
+  scopes:
+    - read:jira-work
+app:
+  runtime:
+    name: nodejs24.x
+    memoryMB: 256
+    architecture: arm64
+  id: ari:cloud:ecosystem::app/6e91cdf2-96d1-48a2-ac13-4eace341769d
