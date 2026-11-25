@@ -1,14 +1,20 @@
 import { controlC1 } from './c1-done-assignee-resolution.js';
+import { controlC3 } from './c3-traceability.js';
+import { controlC4 } from './c4-segregation-of-duties.js';
+import { controlC5 } from './c5-timeliness.js';
 
 const CONTROLS = new Map([
   [controlC1.id, controlC1],
+  [controlC3.id, controlC3],
+  [controlC4.id, controlC4],
+  [controlC5.id, controlC5],
 ]);
 
 /**
  * Looks up a control by ID (case-insensitive).
  *
  * @param {string} controlId
- * @returns {typeof controlC1 | undefined}
+ * @returns {object | undefined}
  */
 export function getControl(controlId) {
   if (!controlId || typeof controlId !== 'string') {
@@ -24,4 +30,13 @@ export function getControl(controlId) {
  */
 export function listControlIds() {
   return Array.from(CONTROLS.keys());
+}
+
+/**
+ * Returns all registered control definitions.
+ *
+ * @returns {Array<object>}
+ */
+export function listControls() {
+  return Array.from(CONTROLS.values());
 }
