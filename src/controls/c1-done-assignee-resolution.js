@@ -1,98 +1,47 @@
-import api, { route } from '@forge/api';
+import { getSiteBaseUrl, searchJiraIssues } from './jira-client.js';
 import { buildControlResult } from './types.js';
 
-const MAX_PAGES = 5;
-const PAGE_SIZE = 100;
+const TITLE = 'Done issues have assignee and resolution';
 
 /**
- * Resolves the Jira site base URL for constructing clickable browse links.
- * Falls back to empty string if unavailable so links degrade gracefully.
- *
- * @param {object} [context]
- * @returns {Promise<string>}
- */
-async function getSiteBaseUrl(context) {
-  if (context?.siteUrl) {
-    return context.siteUrl.replace(/\/$/, '');
-  }
-
-  const res = await api.asUser().requestJira(route`/rest/api/3/serverInfo`);
-  if (!res.ok) {
-    return '';
-  }
-  const info = await res.json();
-  return (info.baseUrl || '').replace(/\/$/, '');
-}
-
-/**
- * Fetches Jira issues in status "Done" using /rest/api/3/search/jql.
- *
- * @returns {Promise<Array<object>>}
- */
-async function fetchDoneIssues() {
-  const issues = [];
-  let nextPageToken = undefined;
-
-  for (let page = 0; page < MAX_PAGES; page += 1) {
-    const body = {
-      jql: 'status = "Done"',
-      fields: ['summary', 'status', 'assignee', 'resolution'],
-      maxResults: PAGE_SIZE,
-      ...(nextPageToken ? { nextPageToken } : {}),
-    };
-
-    const res = await api.asUser().requestJira(route`/rest/api/3/search/jql`, {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    });
-
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`Jira search failed (${res.status}): ${text}`);
-    }
-
-    const data = await res.json();
-    if (Array.isArray(data.issues)) {
-      issues.push(...data.issues);
-    }
-
-    if (data.isLast || !data.nextPageToken) {
-      break;
-    }
-    nextPageToken = data.nextPageToken;
-  }
-
-  return issues;
-}
-
-/**
- * C1: Every Jira issue in status Done must have an assignee and a resolution.
+ * C1: Every Jira issue in statusCategory Done must have an assignee and a resolution.
  */
 export const controlC1 = {
   id: 'C1',
-  name: 'Done issues have assignee and resolution',
-  description: 'Every Jira issue in status Done has an assignee and a resolution.',
+  title: TITLE,
+  description: 'Every Jira issue in statusCategory Done has an assignee and a resolution.',
 
   /**
    * @param {object} [context]
    * @returns {Promise<import('./types.js').ControlResult>}
    */
   async run(context) {
-    const [baseUrl, issues] = await Promise.all([
+    const [baseUrl, searchResult] = await Promise.all([
       getSiteBaseUrl(context),
-      fetchDoneIssues(),
+      searchJiraIssues('statusCategory = Done', ['summary', 'status', 'assignee', 'resolution']),
     ]);
+
+    if (searchResult.jqlError) {
+      return buildControlResult({
+        controlId: 'C1',
+        title: TITLE,
+        status: 'missing_evidence',
+        checked: 0,
+        reason: `Unable to query Done issues on this site: ${searchResult.jqlError}`,
+        failures: [],
+        evidence: [],
+      });
+    }
+
+    const { issues, truncated, cap } = searchResult;
 
     if (issues.length === 0) {
       return buildControlResult({
         controlId: 'C1',
+        title: TITLE,
         status: 'missing_evidence',
         checked: 0,
-        reason: 'No Jira issues found in status Done.',
+        reason: 'No Jira issues found with statusCategory = Done.',
         failures: [],
         evidence: [],
       });
@@ -134,16 +83,20 @@ export const controlC1 = {
     }
 
     const status = failures.length === 0 ? 'pass' : 'fail';
-    const reason =
+    const baseReason =
       failures.length === 0
         ? `All ${issues.length} Done issue(s) have an assignee and a resolution.`
         : `${failures.length} of ${issues.length} Done issue(s) are missing an assignee or resolution.`;
+    const capNote = truncated
+      ? ` (Safety cap of ${cap} issues reached; remaining issues were not evaluated.)`
+      : '';
 
     return buildControlResult({
       controlId: 'C1',
+      title: TITLE,
       status,
       checked: issues.length,
-      reason,
+      reason: `${baseReason}${capNote}`,
       failures,
       evidence,
     });

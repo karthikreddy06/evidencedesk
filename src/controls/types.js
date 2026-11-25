@@ -1,20 +1,23 @@
 /**
- * @typedef {'pass' | 'fail' | 'missing_evidence'} ControlStatus
+ * @typedef {'pass' | 'fail' | 'missing_evidence' | 'error'} ControlStatus
  *
  * @typedef {Object} ControlFailure
- * @property {string} issueKey - Jira issue key (e.g. "ED-12").
- * @property {string} reason - Deterministic explanation of why the issue failed.
- * @property {string} url - Direct browser URL to the Jira issue.
+ * @property {string} [issueKey] - Jira issue key (e.g. "ED-12").
+ * @property {string} [pageTitle] - Confluence page title.
+ * @property {string} reason - Deterministic explanation of why the item failed.
+ * @property {string} url - Direct browser URL to the item.
  *
  * @typedef {Object} ControlEvidence
- * @property {string} issueKey - Jira issue key (e.g. "ED-12").
- * @property {string} url - Direct browser URL to the Jira issue.
- * @property {string} [summary] - Issue summary.
+ * @property {string} [issueKey] - Jira issue key (e.g. "ED-12").
+ * @property {string} [pageTitle] - Confluence page title.
+ * @property {string} url - Direct browser URL to the item.
+ * @property {string} [summary] - Item summary or details.
  * @property {string | null} [assignee] - Assignee display name, or null if unassigned.
  * @property {string | null} [resolution] - Resolution name, or null if unresolved.
  *
  * @typedef {Object} ControlResult
  * @property {string} controlId - Control identifier (e.g. "C1").
+ * @property {string} title - Short human-readable title of the control.
  * @property {ControlStatus} status - Deterministic compliance outcome.
  * @property {number} checked - Total number of records evaluated.
  * @property {string} reason - Human-readable summary of the outcome.
@@ -30,6 +33,7 @@
  */
 export function buildControlResult({
   controlId,
+  title = '',
   status,
   checked,
   reason,
@@ -38,6 +42,7 @@ export function buildControlResult({
 }) {
   return {
     controlId,
+    title,
     status,
     checked,
     reason,
