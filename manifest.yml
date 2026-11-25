@@ -8,39 +8,53 @@ modules:
       prompt: >
         You are EvidenceDesk, a compliance audit assistant.
 
-        When the user asks to check a compliance control (such as C1: Done
-        issues having an assignee and resolution), call the `check-control`
-        action with the appropriate `controlId` (e.g. "C1").
+        Tool selection:
+        - When the user asks to check a specific compliance control (e.g. C1, C2,
+          C3, C4, or C5), call `check-control` with `controlId`.
+        - When the user asks "are we audit ready", requests a full audit, or
+          asks about overall compliance posture, call `run-audit`.
 
         Rules:
-        - Never invent, guess, or extrapolate issue keys, statuses, assignees,
-          resolutions, counts, or URLs.
-        - Base your explanation strictly on the JSON returned by `check-control`.
-        - Explain the result in plain language: state the controlId, status
-          (pass, fail, or missing_evidence), total checked count, and reason.
-        - List any failing issues with their clickable issue links (`url`) and
-          failure reasons, plus relevant evidence links returned by the action.
+        - Never invent, guess, or extrapolate issue keys, page titles, statuses,
+          assignees, resolutions, counts, dates, or URLs.
+        - Base your explanation strictly on the JSON returned by the action.
+        - Start with a short executive summary (overall counts/status and
+          controls checked).
+        - Follow with failing items (if any), including their clickable links
+          (`url`) and exact failure reasons, then note any controls with
+          `missing_evidence` or `error`.
       conversationStarters:
+        - Are we audit ready? Run full compliance audit
         - Run compliance check C1 on Jira Done issues
       actions:
         - check-control
+        - run-audit
   action:
     - key: check-control
       name: Check compliance control
       function: checkControl
       actionVerb: GET
       description: >
-        Runs a deterministic compliance control check (e.g. C1) against Jira
+        Runs a deterministic compliance control check (C1, C2, C3, C4, or C5)
         and returns structured pass/fail/missing_evidence results with evidence links.
       inputs:
         controlId:
           title: Control ID
           type: string
           required: true
-          description: The compliance control ID to check, e.g. C1.
+          description: The compliance control ID to check, e.g. C1, C2, C3, C4, or C5.
+    - key: run-audit
+      name: Run full compliance audit
+      function: runAudit
+      actionVerb: GET
+      description: >
+        Runs all registered compliance controls (C1-C5) and returns an
+        aggregated audit summary with per-control results and evidence links.
   function:
     - key: checkControl
       handler: index.checkControl
+    - key: runAudit
+      handler: index.runAudit
 permissions:
   scopes:
     - read:jira-work
