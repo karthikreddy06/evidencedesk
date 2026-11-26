@@ -34,13 +34,23 @@ Registered in [`src/controls/registry.js`](src/controls/registry.js):
 ### Implemented Features
 
 - Single-control compliance check (`check-control`)
-- Full parallel compliance audit (`run-audit`) with per-control error isolation
-- Timestamped Confluence Audit Evidence Pack page generation (`generate-evidence-pack`)
+- Full parallel compliance audit (`run-audit`) with per-control error isolation and 12s per-control timeout
+- Timestamped Confluence Audit Evidence Pack page generation (`generate-evidence-pack`) with 5-minute deduplication
+- `rovo:mcp` module (`evidencedesk-mcp`) exposing `check-control`, `run-audit`, and `generate-evidence-pack` as MCP tools
 
 ### Planned
 
 - Teamwork Graph write-back
-- Atlassian MCP server integration
+
+## MCP
+
+EvidenceDesk includes a `rovo:mcp` module (`evidencedesk-mcp`) in `manifest.yml` (Forge Preview) that exposes the three existing actions as MCP tools:
+
+- `check-control` — evaluate a single compliance control (`C1`–`C5`), optionally scoped by `projectKey`
+- `run-audit` — run all controls (`C1`–`C5`) in parallel, optionally scoped by `projectKey`
+- `generate-evidence-pack` — run the full audit and publish a Confluence Audit Evidence Pack page, optionally scoped by `projectKey` and `spaceKey`
+
+Tools execute under the authenticated user's Atlassian permissions via Atlassian's Rovo MCP infrastructure (`https://mcp.atlassian.com/v2/mcp` with OAuth 2.1) or Rovo Studio, subject to site/organization admin enablement.
 
 ## Architecture
 
