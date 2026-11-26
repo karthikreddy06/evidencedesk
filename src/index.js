@@ -1,8 +1,8 @@
 import { executeAudit, runControlWithBudget } from './audit.js';
-import { normalizeProjectKey } from './controls/jira-client.js';
+import { getSiteBaseUrl, normalizeProjectKey } from './controls/jira-client.js';
 import { getControl, listControlIds } from './controls/registry.js';
 import { buildControlResult } from './controls/types.js';
-import { createEvidencePackPage } from './evidence-pack.js';
+import { createEvidencePackPage, getRecentEvidencePack } from './evidence-pack.js';
 
 /**
  * Rovo action handler for `check-control`.
@@ -73,7 +73,18 @@ export async function runAudit(payload, context) {
  * @param {object} context
  */
 export async function generateEvidencePack(payload, context) {
-  const audit = await executeAudit({ ...context, projectKey: payload?.projectKey });
+  const projectKey = normalizeProjectKey(payload?.projectKey);
+  const site = await getSiteBaseUrl(context).catch(() => context?.siteUrl || '');
+
+  const cached = await getRecentEvidencePack(site, projectKey);
+  if (cached) {
+    console.log(
+      `[generate-evidence-pack] deduped pageId=${cached.pageId} space=${cached.spaceKey} project=${projectKey || 'ALL'}`
+    );
+    return cached;
+  }
+
+  const audit = await executeAudit({ ...context, projectKey });
   const result = await createEvidencePackPage(audit, payload?.spaceKey);
   console.log(
     `[generate-evidence-pack] pageId=${result.pageId} space=${result.spaceKey} project=${audit.projectKey || 'ALL'} url=${result.pageUrl}`

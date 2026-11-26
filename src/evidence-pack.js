@@ -1,4 +1,8 @@
 import api, { route } from '@forge/api';
+import { kvs } from '@forge/kvs';
+
+const MAX_ROWS_PER_CONTROL = 25;
+const DEDUPE_TTL_MS = 5 * 60 * 1000;
 
 /**
  * Escapes text for safe inclusion in Confluence XHTML storage format.
@@ -31,28 +35,91 @@ function renderLink(url, label) {
 }
 
 /**
- * Formats a Date as "YYYY-MM-DD HH:mm" in UTC.
+ * Formats a Date as "YYYY-MM-DD HH:mm:ss" in UTC.
  *
  * @param {Date} date
  * @returns {string}
  */
-function formatTimestamp(date) {
+function formatTimestampSeconds(date) {
   const pad = (n) => String(n).padStart(2, '0');
   return (
     `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())} ` +
-    `${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}`
+    `${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())}`
   );
 }
 
 /**
+ * Builds a deterministic KVS key for deduplicating evidence pack creation.
+ *
+ * @param {string} site
+ * @param {string | null} projectKey
+ * @returns {string}
+ */
+function buildDedupeKey(site, projectKey) {
+  const safeSite = String(site || 'default').replace(/[^a-zA-Z0-9._-]/g, '_');
+  const safeProject = String(projectKey || 'ALL').replace(/[^a-zA-Z0-9._-]/g, '_');
+  return `pack:${safeSite}:${safeProject}`.slice(0, 450);
+}
+
+/**
+ * Returns a recently created evidence pack (within 5 minutes) for the same
+ * site and projectKey, or null if none exists or it has expired.
+ *
+ * @param {string} site
+ * @param {string | null} projectKey
+ * @returns {Promise<{ pageUrl: string, pageId: string, spaceKey: string, summary: object } | null>}
+ */
+export async function getRecentEvidencePack(site, projectKey) {
+  try {
+    const key = buildDedupeKey(site, projectKey);
+    const cached = await kvs.get(key);
+    if (!cached || !cached.createdAtMs || !cached.pageId) {
+      return null;
+    }
+    if (Date.now() - cached.createdAtMs > DEDUPE_TTL_MS) {
+      return null;
+    }
+    return {
+      pageUrl: cached.pageUrl,
+      pageId: cached.pageId,
+      spaceKey: cached.spaceKey,
+      summary: cached.summary,
+    };
+  } catch (err) {
+    console.warn(`[evidence-pack] KVS read failed: ${err?.message}`);
+    return null;
+  }
+}
+
+/**
+ * Stores the newly created evidence pack metadata in Forge KVS for dedupe.
+ *
+ * @param {string} site
+ * @param {string | null} projectKey
+ * @param {{ pageUrl: string, pageId: string, spaceKey: string, summary: object }} record
+ */
+async function saveRecentEvidencePack(site, projectKey, record) {
+  try {
+    const key = buildDedupeKey(site, projectKey);
+    await kvs.set(key, {
+      ...record,
+      createdAtMs: Date.now(),
+    });
+  } catch (err) {
+    console.warn(`[evidence-pack] KVS write failed: ${err?.message}`);
+  }
+}
+
+/**
  * Builds Confluence XHTML storage format body for the audit evidence pack.
+ * Caps failure/evidence tables at 25 rows per control and states the full count.
  *
  * @param {object} audit
  * @param {string} spaceKey
  * @returns {string}
  */
 function buildStorageBody(audit, spaceKey) {
-  const { generatedAt, site, summary, results } = audit;
+  const { generatedAt, site, projectKey, summary, results } = audit;
 
   const parts = [
     '<h1>Audit Evidence Pack</h1>',
@@ -60,6 +127,7 @@ function buildStorageBody(audit, spaceKey) {
     '<table><tbody>',
     `<tr><th>Generated At</th><td>${escapeHtml(generatedAt)}</td></tr>`,
     `<tr><th>Site</th><td>${escapeHtml(site || 'N/A')}</td></tr>`,
+    `<tr><th>Project Scope</th><td>${escapeHtml(projectKey || 'ALL')}</td></tr>`,
     `<tr><th>Confluence Space</th><td>${escapeHtml(spaceKey)}</td></tr>`,
     `<tr><th>Pass</th><td>${escapeHtml(summary.pass)}</td></tr>`,
     `<tr><th>Fail</th><td>${escapeHtml(summary.fail)}</td></tr>`,
@@ -76,14 +144,20 @@ function buildStorageBody(audit, spaceKey) {
     );
 
     const hasFailures = Array.isArray(control.failures) && control.failures.length > 0;
-    const rows = hasFailures ? control.failures : control.evidence || [];
+    const allRows = hasFailures ? control.failures : control.evidence || [];
 
-    if (rows.length > 0) {
+    if (allRows.length > 0) {
+      const shownRows = allRows.slice(0, MAX_ROWS_PER_CONTROL);
       const heading = hasFailures ? 'Failures' : 'Evidence';
-      parts.push(`<p><strong>${heading}</strong></p>`);
+      const countNote =
+        allRows.length > MAX_ROWS_PER_CONTROL
+          ? ` (showing ${MAX_ROWS_PER_CONTROL} of ${allRows.length})`
+          : ` (${allRows.length})`;
+
+      parts.push(`<p><strong>${heading}${escapeHtml(countNote)}</strong></p>`);
       parts.push('<table><thead><tr><th>Item</th><th>Details</th></tr></thead><tbody>');
 
-      for (const item of rows) {
+      for (const item of shownRows) {
         const label = item.issueKey || item.pageTitle || item.url || 'Item';
         const details = item.reason || item.summary || '';
         parts.push(
@@ -132,7 +206,48 @@ async function findCandidateSpaces(spaceKey) {
 }
 
 /**
- * Creates an Audit Evidence Pack Confluence page from an audit result.
+ * Posts a new page to Confluence REST API v2, retrying once with a short
+ * random suffix if Confluence returns 400 for a duplicate title.
+ *
+ * @param {string} spaceId
+ * @param {string} title
+ * @param {string} bodyValue
+ * @returns {Promise<Response>}
+ */
+async function postConfluencePage(spaceId, title, bodyValue) {
+  const attempt = async (pageTitle) =>
+    api.asUser().requestConfluence(route`/wiki/api/v2/pages`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        spaceId,
+        status: 'current',
+        title: pageTitle,
+        body: {
+          representation: 'storage',
+          value: bodyValue,
+        },
+      }),
+    });
+
+  const res = await attempt(title);
+  if (res.status === 400) {
+    const errText = await res.text();
+    if (/already exists/i.test(errText)) {
+      const suffix = Math.random().toString(36).slice(2, 6);
+      return attempt(`${title} (${suffix})`);
+    }
+    return new Response(errText, { status: res.status, statusText: res.statusText });
+  }
+  return res;
+}
+
+/**
+ * Creates an Audit Evidence Pack Confluence page from an audit result and
+ * caches the result in Forge KVS for 5 minutes.
  *
  * @param {object} audit
  * @param {string} [requestedSpaceKey]
@@ -141,27 +256,13 @@ async function findCandidateSpaces(spaceKey) {
 export async function createEvidencePackPage(audit, requestedSpaceKey) {
   const trimmedKey = requestedSpaceKey?.trim();
   const spaces = await findCandidateSpaces(trimmedKey || undefined);
-  const title = `Audit Evidence Pack - ${formatTimestamp(new Date())}`;
+  const scopeLabel = audit.projectKey || 'ALL';
+  const title = `Audit Evidence Pack - ${scopeLabel} - ${formatTimestampSeconds(new Date())}`;
 
   let lastError = null;
   for (const space of spaces) {
     const bodyValue = buildStorageBody(audit, space.key);
-    const res = await api.asUser().requestConfluence(route`/wiki/api/v2/pages`, {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        spaceId: space.id,
-        status: 'current',
-        title,
-        body: {
-          representation: 'storage',
-          value: bodyValue,
-        },
-      }),
-    });
+    const res = await postConfluencePage(space.id, title, bodyValue);
 
     if (res.ok) {
       const page = await res.json();
@@ -171,12 +272,14 @@ export async function createEvidencePackPage(audit, requestedSpaceKey) {
       const resolvedBase = base || fallbackBase;
       const pageUrl = resolvedBase && webui ? `${resolvedBase}${webui}` : webui || page.id;
 
-      return {
+      const result = {
         pageUrl,
         pageId: page.id,
         spaceKey: space.key,
         summary: audit.summary,
       };
+      await saveRecentEvidencePack(audit.site, audit.projectKey, result);
+      return result;
     }
 
     const errText = await res.text();

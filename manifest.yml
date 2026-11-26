@@ -103,6 +103,7 @@ permissions:
     - read:page:confluence
     - read:space:confluence
     - write:page:confluence
+    - storage:app
 app:
   runtime:
     name: nodejs24.x
