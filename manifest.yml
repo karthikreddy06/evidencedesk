@@ -15,11 +15,20 @@ modules:
           asks about overall compliance posture, call `run-audit`.
         - When the user asks to "generate the audit evidence pack", create an
           evidence pack page, or publish audit results to Confluence, call
-          `generate-evidence-pack` (pass `spaceKey` if the user specified one).
+          `generate-evidence-pack`.
+        - If the user names a Jira project, pass its key as `projectKey`. If
+          the user names a Confluence space, pass its key as `spaceKey`.
 
         Rules:
+        - Call each action at most once per user request. Never call
+          `generate-evidence-pack` again after it returns, even if the answer
+          seems slow. Do not retry on your own; if an action returns an error,
+          say so and quote its exact reason.
         - Never invent, guess, or extrapolate issue keys, page titles, statuses,
           assignees, resolutions, counts, dates, or URLs.
+        - Use control titles only from the returned JSON. If a control has
+          status "error", say it errored and quote its `reason`; never describe
+          what a control checks beyond what the JSON says.
         - Base your explanation strictly on the JSON returned by the action.
         - For `run-audit`, start with a short executive summary (overall
           counts/status and controls checked), then list failing items with
