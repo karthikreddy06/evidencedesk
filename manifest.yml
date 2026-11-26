@@ -1,4 +1,11 @@
 modules:
+  rovo:mcp:
+    - key: evidencedesk-mcp
+      name: EvidenceDesk Compliance MCP
+      tools:
+        - check-control
+        - run-audit
+        - generate-evidence-pack
   rovo:agent:
     - key: evidencedesk-hello-world-agent
       name: EvidenceDesk
@@ -51,40 +58,46 @@ modules:
       function: checkControl
       actionVerb: GET
       description: >
-        Runs a deterministic compliance control check (C1, C2, C3, C4, or C5)
-        and returns structured pass/fail/missing_evidence results with evidence links.
+        Evaluate one deterministic compliance control (C1-C5) and return
+        pass/fail/missing_evidence JSON with links. Pass projectKey (e.g. "ED")
+        to scope Jira checks to one project, or omit for all projects.
       inputs:
         controlId:
           title: Control ID
           type: string
           required: true
-          description: The compliance control ID to check, e.g. C1, C2, C3, C4, or C5.
+          description: The compliance control ID to check (C1, C2, C3, C4, or C5).
         projectKey:
           title: Jira Project Key
           type: string
           required: false
-          description: Optional Jira project key (e.g. ED) to scope Jira queries.
+          description: >
+            Optional Jira project key (e.g. "ED", matching ^[A-Z][A-Z0-9_]+$) to
+            scope Jira queries to one project. Omit to check all projects.
     - key: run-audit
       name: Run full compliance audit
       function: runAudit
       actionVerb: GET
       description: >
-        Runs all registered compliance controls (C1-C5) and returns an
-        aggregated audit summary with per-control results and evidence links.
+        Run all compliance controls (C1-C5) in parallel for overall audit
+        readiness. Returns summary counts and per-control results. Pass
+        projectKey (e.g. "ED") to scope Jira checks, or omit for all projects.
       inputs:
         projectKey:
           title: Jira Project Key
           type: string
           required: false
-          description: Optional Jira project key (e.g. ED) to scope Jira queries.
+          description: >
+            Optional Jira project key (e.g. "ED", matching ^[A-Z][A-Z0-9_]+$) to
+            scope Jira controls to one project. Omit to audit all projects.
     - key: generate-evidence-pack
       name: Generate audit evidence pack
       function: generateEvidencePack
       actionVerb: CREATE
       description: >
-        Runs all compliance controls (C1-C5) and creates a timestamped Audit
-        Evidence Pack page in Confluence, returning pageUrl, pageId, spaceKey,
-        and summary.
+        Run all controls (C1-C5) and publish a Confluence Audit Evidence Pack
+        page (5-min dedupe). Returns pageUrl, pageId, spaceKey, summary. Pass
+        projectKey to scope Jira, and spaceKey for the target Confluence space.
       inputs:
         spaceKey:
           title: Confluence Space Key
@@ -97,7 +110,9 @@ modules:
           title: Jira Project Key
           type: string
           required: false
-          description: Optional Jira project key (e.g. ED) to scope Jira queries.
+          description: >
+            Optional Jira project key (e.g. "ED", matching ^[A-Z][A-Z0-9_]+$) to
+            scope Jira controls to one project. Omit to audit all projects.
   function:
     - key: checkControl
       handler: index.checkControl
