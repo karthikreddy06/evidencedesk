@@ -1,6 +1,7 @@
-import { getSiteBaseUrl } from './controls/jira-client.js';
-import { getControl, listControlIds, listControls } from './controls/registry.js';
+import { executeAudit } from './audit.js';
+import { getControl, listControlIds } from './controls/registry.js';
 import { buildControlResult } from './controls/types.js';
+import { createEvidencePackPage } from './evidence-pack.js';
 
 /**
  * Rovo action handler for `check-control`.
@@ -34,59 +35,32 @@ export async function checkControl(payload, context) {
 
 /**
  * Rovo action handler for `run-audit`.
- * Runs all registered controls, isolates per-control errors, and returns an
- * aggregated audit summary.
+ * Runs all registered controls in parallel and returns an aggregated summary.
  *
  * @param {object} _payload
  * @param {object} context
  */
 export async function runAudit(_payload, context) {
-  const controls = listControls();
-  const [site, results] = await Promise.all([
-    getSiteBaseUrl(context).catch(() => ''),
-    Promise.all(
-      controls.map(async (control) => {
-        try {
-          return await control.run(context);
-        } catch (err) {
-          return buildControlResult({
-            controlId: control.id,
-            title: control.title || control.id,
-            status: 'error',
-            checked: 0,
-            reason: err?.message || 'Unexpected error while evaluating control.',
-            failures: [],
-            evidence: [],
-          });
-        }
-      })
-    ),
-  ]);
-
-  const summary = {
-    pass: 0,
-    fail: 0,
-    missing_evidence: 0,
-    error: 0,
-  };
-
-  for (const result of results) {
-    if (Object.prototype.hasOwnProperty.call(summary, result.status)) {
-      summary[result.status] += 1;
-    } else {
-      summary.error += 1;
-    }
-  }
-
-  const output = {
-    generatedAt: new Date().toISOString(),
-    site: site || context?.siteUrl || '',
-    summary,
-    results,
-  };
-
+  const output = await executeAudit(context);
+  const { summary } = output;
   console.log(
     `[run-audit] pass=${summary.pass} fail=${summary.fail} missing_evidence=${summary.missing_evidence} error=${summary.error}`
   );
   return output;
+}
+
+/**
+ * Rovo action handler for `generate-evidence-pack`.
+ * Runs the full audit and publishes a Confluence Audit Evidence Pack page.
+ *
+ * @param {{ spaceKey?: string }} payload
+ * @param {object} context
+ */
+export async function generateEvidencePack(payload, context) {
+  const audit = await executeAudit(context);
+  const result = await createEvidencePackPage(audit, payload?.spaceKey);
+  console.log(
+    `[generate-evidence-pack] pageId=${result.pageId} space=${result.spaceKey} url=${result.pageUrl}`
+  );
+  return result;
 }

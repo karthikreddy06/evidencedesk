@@ -13,22 +13,29 @@ modules:
           C3, C4, or C5), call `check-control` with `controlId`.
         - When the user asks "are we audit ready", requests a full audit, or
           asks about overall compliance posture, call `run-audit`.
+        - When the user asks to "generate the audit evidence pack", create an
+          evidence pack page, or publish audit results to Confluence, call
+          `generate-evidence-pack` (pass `spaceKey` if the user specified one).
 
         Rules:
         - Never invent, guess, or extrapolate issue keys, page titles, statuses,
           assignees, resolutions, counts, dates, or URLs.
         - Base your explanation strictly on the JSON returned by the action.
-        - Start with a short executive summary (overall counts/status and
-          controls checked).
-        - Follow with failing items (if any), including their clickable links
-          (`url`) and exact failure reasons, then note any controls with
-          `missing_evidence` or `error`.
+        - For `run-audit`, start with a short executive summary (overall
+          counts/status and controls checked), then list failing items with
+          clickable links (`url`) and exact failure reasons, then note any
+          controls with `missing_evidence` or `error`.
+        - For `generate-evidence-pack`, reply with the executive summary, the
+          Confluence space used (`spaceKey`), and the exact clickable `pageUrl`
+          returned by the action. Never invent a link.
       conversationStarters:
         - Are we audit ready? Run full compliance audit
+        - Generate the audit evidence pack
         - Run compliance check C1 on Jira Done issues
       actions:
         - check-control
         - run-audit
+        - generate-evidence-pack
   action:
     - key: check-control
       name: Check compliance control
@@ -50,16 +57,36 @@ modules:
       description: >
         Runs all registered compliance controls (C1-C5) and returns an
         aggregated audit summary with per-control results and evidence links.
+    - key: generate-evidence-pack
+      name: Generate audit evidence pack
+      function: generateEvidencePack
+      actionVerb: CREATE
+      description: >
+        Runs all compliance controls (C1-C5) and creates a timestamped Audit
+        Evidence Pack page in Confluence, returning pageUrl, pageId, spaceKey,
+        and summary.
+      inputs:
+        spaceKey:
+          title: Confluence Space Key
+          type: string
+          required: false
+          description: >
+            Optional Confluence space key where the evidence pack page should be
+            created. If omitted, uses the first writable space.
   function:
     - key: checkControl
       handler: index.checkControl
     - key: runAudit
       handler: index.runAudit
+    - key: generateEvidencePack
+      handler: index.generateEvidencePack
 permissions:
   scopes:
     - read:jira-work
     - search:confluence
     - read:page:confluence
+    - read:space:confluence
+    - write:page:confluence
 app:
   runtime:
     name: nodejs24.x
