@@ -26,23 +26,29 @@ EvidenceDesk pairs an Atlassian Rovo agent with deterministic Forge action handl
 Registered in [`src/controls/registry.js`](src/controls/registry.js):
 
 - **C1** ([`src/controls/c1-done-assignee-resolution.js`](src/controls/c1-done-assignee-resolution.js)): Every Jira issue in `statusCategory = Done` has an assignee and a resolution.
-- **C2** ([`src/controls/c2-policy-review-date.js`](src/controls/c2-policy-review-date.js)): Confluence pages labeled `policy` have a latest version date within 365 days.
+- **C2** ([`src/controls/c2-policy-review-date.js`](src/controls/c2-policy-review-date.js)): Confluence pages labeled `policy` (queried via CQL `label = "policy" AND type = page`) have a latest version date within 365 days.
 - **C3** ([`src/controls/c3-traceability.js`](src/controls/c3-traceability.js)): Done Jira issues of type `Change`, `Task`, or `Story` have at least one issue link or remote link.
 - **C4** ([`src/controls/c4-segregation-of-duties.js`](src/controls/c4-segregation-of-duties.js)): Assigned Done Jira issues of type `Change` have distinct assignee and reporter accounts.
 - **C5** ([`src/controls/c5-timeliness.js`](src/controls/c5-timeliness.js)): Resolved Jira `Bug` issues with priority `Highest` or `Critical` are resolved within 7 days.
 
+### Implemented Features
+
+- Single-control compliance check (`check-control`)
+- Full parallel compliance audit (`run-audit`) with per-control error isolation
+- Timestamped Confluence Audit Evidence Pack page generation (`generate-evidence-pack`)
+
 ### Planned
 
-- Audit evidence pack Confluence page generation
 - Teamwork Graph write-back
 - Atlassian MCP server integration
 
 ## Architecture
 
 - **Forge app** (`manifest.yml`):
-  - `rovo:agent` module (`EvidenceDesk`) with instructions to call `check-control` for single controls or `run-audit` for full audit readiness checks
-  - `action` modules: `check-control` (`checkControl`) and `run-audit` (`runAudit`) in `src/index.js`
-  - Minimal scopes: `read:jira-work`, `read:label:confluence`, `read:page:confluence`
+  - `rovo:agent` module (`EvidenceDesk`) with instructions to call `check-control` for single controls, `run-audit` for full audit readiness checks, or `generate-evidence-pack` to publish a Confluence evidence pack
+  - `action` modules: `check-control` (`checkControl`), `run-audit` (`runAudit`), and `generate-evidence-pack` (`generateEvidencePack`) in `src/index.js`
+  - Shared audit runner (`src/audit.js`) and Confluence evidence pack builder (`src/evidence-pack.js`)
+  - Minimal scopes: `read:jira-work`, `search:confluence`, `read:page:confluence`, `read:space:confluence`, `write:page:confluence`
 - **Modular controls** (`src/controls/`):
   - `src/controls/types.js`: shared result shape (`ControlResult`) and `buildControlResult` helper
   - `src/controls/jira-client.js`: shared Jira REST API v3 search/pagination and site URL helper
@@ -54,7 +60,7 @@ Registered in [`src/controls/registry.js`](src/controls/registry.js):
 - Atlassian Forge (`@forge/api`)
 - Atlassian Rovo (`rovo:agent`)
 - Jira Cloud REST API v3 (`/rest/api/3/search/jql`, `/rest/api/3/serverInfo`, `/rest/api/3/issue/{key}/remotelink`)
-- Confluence Cloud REST API v2 (`/wiki/api/v2/labels`, `/wiki/api/v2/labels/{id}/pages`)
+- Confluence Cloud REST API (`/wiki/rest/api/search` CQL, `/wiki/api/v2/spaces`, `/wiki/api/v2/pages`)
 - Node.js
 
 ## Setup
