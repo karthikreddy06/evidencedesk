@@ -58,7 +58,7 @@ modules:
 permissions:
   scopes:
     - read:jira-work
-    - read:label:confluence
+    - search:confluence
     - read:page:confluence
 app:
   runtime:

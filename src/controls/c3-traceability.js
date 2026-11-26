@@ -4,6 +4,7 @@ import { buildControlResult } from './types.js';
 
 const TITLE = 'Done Change, Task, and Story issues have traceability links';
 const TARGET_ISSUE_TYPES = new Set(['Change', 'Task', 'Story']);
+const MAX_REMOTE_LINK_CALLS = 100;
 
 /**
  * Checks whether a Jira issue has at least one remote link.
@@ -69,15 +70,28 @@ export const controlC3 = {
 
     const failures = [];
     const evidence = [];
+    let remoteLinkCalls = 0;
+    let remoteLinkCapHit = false;
 
     for (const issue of matchingIssues) {
       const key = issue.key;
       const fields = issue.fields || {};
       const url = baseUrl ? `${baseUrl}/browse/${key}` : key;
       const issueLinks = Array.isArray(fields.issuelinks) ? fields.issuelinks : [];
-      const linked = issueLinks.length > 0 || (await hasRemoteLink(key));
+      let linked = issueLinks.length > 0;
+      let skippedRemoteCheck = false;
 
       if (!linked) {
+        if (remoteLinkCalls < MAX_REMOTE_LINK_CALLS) {
+          remoteLinkCalls += 1;
+          linked = await hasRemoteLink(key);
+        } else {
+          remoteLinkCapHit = true;
+          skippedRemoteCheck = true;
+        }
+      }
+
+      if (!linked && !skippedRemoteCheck) {
         failures.push({
           issueKey: key,
           reason: `${fields.issuetype?.name || 'Issue'} has no issue links or remote links`,
@@ -88,7 +102,7 @@ export const controlC3 = {
       evidence.push({
         issueKey: key,
         url,
-        summary: `${fields.issuetype?.name || 'Issue'}: ${fields.summary || ''}`,
+        summary: `${fields.issuetype?.name || 'Issue'}: ${fields.summary || ''}${skippedRemoteCheck ? ' (remote-link check skipped: cap reached)' : ''}`,
       });
     }
 
@@ -100,13 +114,16 @@ export const controlC3 = {
     const capNote = searchResult.truncated
       ? ` (Safety cap of ${searchResult.cap} issues reached; remaining issues were not evaluated.)`
       : '';
+    const remoteCapNote = remoteLinkCapHit
+      ? ` (Remote-link check cap of ${MAX_REMOTE_LINK_CALLS} issues reached; some issues without Jira issue links were not checked for remote links.)`
+      : '';
 
     return buildControlResult({
       controlId: 'C3',
       title: TITLE,
       status,
       checked: matchingIssues.length,
-      reason: `${baseReason}${capNote}`,
+      reason: `${baseReason}${capNote}${remoteCapNote}`,
       failures,
       evidence,
     });

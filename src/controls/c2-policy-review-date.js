@@ -5,49 +5,25 @@ import { buildControlResult } from './types.js';
 const MAX_AGE_DAYS = 365;
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 const POLICY_LABEL = 'policy';
+const MAX_PAGES = 10;
 const TITLE = `Confluence policy pages reviewed within ${MAX_AGE_DAYS} days`;
 
 /**
- * Looks up the Confluence label ID for "policy" via REST API v2.
+ * Searches for Confluence pages labeled "policy" via CQL search API
+ * (`label = "policy" AND type = page`), expanding content.version.
  *
- * @returns {Promise<string | null>}
- */
-async function findPolicyLabelId() {
-  const res = await api.asUser().requestConfluence(
-    route`/wiki/api/v2/labels?name=${POLICY_LABEL}`,
-    { headers: { Accept: 'application/json' } }
-  );
-
-  if (res.status === 404) {
-    return null;
-  }
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Confluence label lookup failed (${res.status}): ${text}`);
-  }
-
-  const data = await res.json();
-  const match = (data.results || []).find(
-    (label) => label.name?.toLowerCase() === POLICY_LABEL
-  );
-  return match?.id || null;
-}
-
-/**
- * Fetches all pages tagged with the given label ID via Confluence REST API v2.
- *
- * @param {string} labelId
  * @returns {Promise<{ pages: Array<object>, wikiBase: string }>}
  */
-async function fetchPagesForLabel(labelId) {
+async function fetchPolicyPages() {
   const pages = [];
   let nextPath = null;
   let wikiBase = '';
+  const cql = `label = "${POLICY_LABEL}" AND type = page`;
 
-  for (let pageNum = 0; pageNum < 20; pageNum += 1) {
+  for (let pageNum = 0; pageNum < MAX_PAGES; pageNum += 1) {
     const targetRoute = nextPath
       ? assumeTrustedRoute(nextPath)
-      : route`/wiki/api/v2/labels/${labelId}/pages?limit=100`;
+      : route`/wiki/rest/api/search?cql=${cql}&expand=content.version&limit=100`;
 
     const res = await api.asUser().requestConfluence(targetRoute, {
       headers: { Accept: 'application/json' },
@@ -55,15 +31,26 @@ async function fetchPagesForLabel(labelId) {
 
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(`Confluence pages lookup failed (${res.status}): ${text}`);
+      throw new Error(`Confluence CQL search failed (${res.status}): ${text}`);
     }
 
     const data = await res.json();
     if (!wikiBase && data._links?.base) {
       wikiBase = data._links.base.replace(/\/$/, '');
     }
+
     if (Array.isArray(data.results)) {
-      pages.push(...data.results);
+      for (const item of data.results) {
+        const content = item.content || item;
+        if (content && (!content.status || content.status === 'current')) {
+          pages.push({
+            id: content.id,
+            title: content.title || item.title,
+            versionDate: content.version?.when || null,
+            webui: content._links?.webui || item.url || '',
+          });
+        }
+      }
     }
 
     nextPath = data._links?.next || null;
@@ -89,26 +76,12 @@ export const controlC2 = {
    * @returns {Promise<import('./types.js').ControlResult>}
    */
   async run(context) {
-    const labelId = await findPolicyLabelId();
-    if (!labelId) {
-      return buildControlResult({
-        controlId: 'C2',
-        title: TITLE,
-        status: 'missing_evidence',
-        checked: 0,
-        reason: `No Confluence pages found with label "${POLICY_LABEL}".`,
-        failures: [],
-        evidence: [],
-      });
-    }
-
     const [{ pages, wikiBase }, fallbackSiteUrl] = await Promise.all([
-      fetchPagesForLabel(labelId),
+      fetchPolicyPages(),
       getSiteBaseUrl(context),
     ]);
 
-    const currentPages = pages.filter((page) => !page.status || page.status === 'current');
-    if (currentPages.length === 0) {
+    if (pages.length === 0) {
       return buildControlResult({
         controlId: 'C2',
         title: TITLE,
@@ -125,13 +98,12 @@ export const controlC2 = {
     const failures = [];
     const evidence = [];
 
-    for (const page of currentPages) {
+    for (const page of pages) {
       const pageTitle = page.title || `Page ${page.id}`;
-      const webui = page._links?.webui || `/pages/viewpage.action?pageId=${page.id}`;
-      const url = base ? `${base}${webui}` : webui;
-      const versionDate = page.version?.createdAt;
+      const webui = page.webui || `/pages/viewpage.action?pageId=${page.id}`;
+      const url = base && !webui.startsWith('http') ? `${base}${webui}` : webui;
 
-      if (!versionDate) {
+      if (!page.versionDate) {
         failures.push({
           pageTitle,
           reason: 'Latest version date is missing',
@@ -141,7 +113,7 @@ export const controlC2 = {
         continue;
       }
 
-      const ageDays = Math.floor((nowMs - new Date(versionDate).getTime()) / MS_PER_DAY);
+      const ageDays = Math.floor((nowMs - new Date(page.versionDate).getTime()) / MS_PER_DAY);
       if (ageDays > MAX_AGE_DAYS) {
         failures.push({
           pageTitle,
@@ -153,21 +125,21 @@ export const controlC2 = {
       evidence.push({
         pageTitle,
         url,
-        summary: `Last updated ${ageDays} day(s) ago (${versionDate})`,
+        summary: `Last updated ${ageDays} day(s) ago (${page.versionDate})`,
       });
     }
 
     const status = failures.length === 0 ? 'pass' : 'fail';
     const reason =
       failures.length === 0
-        ? `All ${currentPages.length} policy page(s) were updated within ${MAX_AGE_DAYS} days.`
-        : `${failures.length} of ${currentPages.length} policy page(s) have not been updated within ${MAX_AGE_DAYS} days.`;
+        ? `All ${pages.length} policy page(s) were updated within ${MAX_AGE_DAYS} days.`
+        : `${failures.length} of ${pages.length} policy page(s) have not been updated within ${MAX_AGE_DAYS} days.`;
 
     return buildControlResult({
       controlId: 'C2',
       title: TITLE,
       status,
-      checked: currentPages.length,
+      checked: pages.length,
       reason,
       failures,
       evidence,
