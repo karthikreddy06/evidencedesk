@@ -1,7 +1,42 @@
 import api, { route } from '@forge/api';
 
-export const DEFAULT_MAX_PAGES = 20;
+export const DEFAULT_MAX_PAGES = 3;
 export const PAGE_SIZE = 100;
+const PROJECT_KEY_REGEX = /^[A-Z][A-Z0-9_]+$/;
+
+/**
+ * Validates and normalizes an optional Jira projectKey.
+ * Returns null when omitted; throws an Error when invalid.
+ *
+ * @param {string} [projectKey]
+ * @returns {string | null}
+ */
+export function normalizeProjectKey(projectKey) {
+  if (projectKey === undefined || projectKey === null || String(projectKey).trim() === '') {
+    return null;
+  }
+  const normalized = String(projectKey).trim().toUpperCase();
+  if (!PROJECT_KEY_REGEX.test(normalized)) {
+    throw new Error(
+      `Invalid projectKey "${projectKey}". Expected format matching ^[A-Z][A-Z0-9_]+$.`
+    );
+  }
+  return normalized;
+}
+
+/**
+ * Scopes a JQL query to a validated projectKey when provided.
+ *
+ * @param {string} jql
+ * @param {string | null} [projectKey]
+ * @returns {string}
+ */
+export function scopeJql(jql, projectKey) {
+  if (!projectKey) {
+    return jql;
+  }
+  return `project = "${projectKey}" AND (${jql})`;
+}
 
 /**
  * Resolves the Jira/Confluence site base URL for constructing clickable links.
@@ -25,8 +60,8 @@ export async function getSiteBaseUrl(context) {
 
 /**
  * Queries Jira issues via POST /rest/api/3/search/jql with full nextPageToken
- * pagination up to maxPages. Returns jqlError if Jira rejects the JQL (e.g.
- * missing issue type or field on the site) so controls can return missing_evidence.
+ * pagination up to maxPages (default 3 pages = 300 issues).
+ * Returns jqlError if Jira rejects the JQL (e.g. missing issue type/field/project).
  *
  * @param {string} jql
  * @param {string[]} fields

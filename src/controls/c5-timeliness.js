@@ -1,4 +1,4 @@
-import { getSiteBaseUrl, searchJiraIssues } from './jira-client.js';
+import { getSiteBaseUrl, normalizeProjectKey, scopeJql, searchJiraIssues } from './jira-client.js';
 import { buildControlResult } from './types.js';
 
 const MAX_RESOLUTION_DAYS = 7;
@@ -20,14 +20,12 @@ export const controlC5 = {
    * @returns {Promise<import('./types.js').ControlResult>}
    */
   async run(context) {
+    const projectKey = normalizeProjectKey(context?.projectKey);
+    const jql = scopeJql('issuetype = "Bug" AND resolution is not EMPTY', projectKey);
+
     const [baseUrl, searchResult] = await Promise.all([
       getSiteBaseUrl(context),
-      searchJiraIssues('issuetype = "Bug" AND resolution is not EMPTY', [
-        'summary',
-        'priority',
-        'created',
-        'resolutiondate',
-      ]),
+      searchJiraIssues(jql, ['summary', 'priority', 'created', 'resolutiondate']),
     ]);
 
     if (searchResult.jqlError) {

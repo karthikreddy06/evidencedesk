@@ -1,4 +1,4 @@
-import { getSiteBaseUrl, searchJiraIssues } from './jira-client.js';
+import { getSiteBaseUrl, normalizeProjectKey, scopeJql, searchJiraIssues } from './jira-client.js';
 import { buildControlResult } from './types.js';
 
 const TITLE = 'Done issues have assignee and resolution';
@@ -16,9 +16,12 @@ export const controlC1 = {
    * @returns {Promise<import('./types.js').ControlResult>}
    */
   async run(context) {
+    const projectKey = normalizeProjectKey(context?.projectKey);
+    const jql = scopeJql('statusCategory = Done', projectKey);
+
     const [baseUrl, searchResult] = await Promise.all([
       getSiteBaseUrl(context),
-      searchJiraIssues('statusCategory = Done', ['summary', 'status', 'assignee', 'resolution']),
+      searchJiraIssues(jql, ['summary', 'assignee', 'resolution']),
     ]);
 
     if (searchResult.jqlError) {

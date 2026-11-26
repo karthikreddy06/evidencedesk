@@ -50,6 +50,11 @@ modules:
           type: string
           required: true
           description: The compliance control ID to check, e.g. C1, C2, C3, C4, or C5.
+        projectKey:
+          title: Jira Project Key
+          type: string
+          required: false
+          description: Optional Jira project key (e.g. ED) to scope Jira queries.
     - key: run-audit
       name: Run full compliance audit
       function: runAudit
@@ -57,6 +62,12 @@ modules:
       description: >
         Runs all registered compliance controls (C1-C5) and returns an
         aggregated audit summary with per-control results and evidence links.
+      inputs:
+        projectKey:
+          title: Jira Project Key
+          type: string
+          required: false
+          description: Optional Jira project key (e.g. ED) to scope Jira queries.
     - key: generate-evidence-pack
       name: Generate audit evidence pack
       function: generateEvidencePack
@@ -73,6 +84,11 @@ modules:
           description: >
             Optional Confluence space key where the evidence pack page should be
             created. If omitted, uses the first writable space.
+        projectKey:
+          title: Jira Project Key
+          type: string
+          required: false
+          description: Optional Jira project key (e.g. ED) to scope Jira queries.
   function:
     - key: checkControl
       handler: index.checkControl

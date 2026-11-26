@@ -1,4 +1,5 @@
-import { executeAudit } from './audit.js';
+import { executeAudit, runControlWithBudget } from './audit.js';
+import { normalizeProjectKey } from './controls/jira-client.js';
 import { getControl, listControlIds } from './controls/registry.js';
 import { buildControlResult } from './controls/types.js';
 import { createEvidencePackPage } from './evidence-pack.js';
@@ -7,7 +8,7 @@ import { createEvidencePackPage } from './evidence-pack.js';
  * Rovo action handler for `check-control`.
  * Runs a single deterministic compliance control and returns structured JSON.
  *
- * @param {{ controlId?: string }} payload
+ * @param {{ controlId?: string, projectKey?: string }} payload
  * @param {object} context
  */
 export async function checkControl(payload, context) {
@@ -26,9 +27,24 @@ export async function checkControl(payload, context) {
     });
   }
 
-  const result = await control.run(context);
+  let projectKey = null;
+  try {
+    projectKey = normalizeProjectKey(payload?.projectKey);
+  } catch (err) {
+    return buildControlResult({
+      controlId: control.id,
+      title: control.title || control.id,
+      status: 'error',
+      checked: 0,
+      reason: err.message,
+      failures: [],
+      evidence: [],
+    });
+  }
+
+  const result = await runControlWithBudget(control, { ...context, projectKey });
   console.log(
-    `[check-control] ${result.controlId} -> ${result.status} (checked=${result.checked}, failures=${result.failures.length})`
+    `[check-control] ${result.controlId} project=${projectKey || 'ALL'} -> ${result.status} (checked=${result.checked}, failures=${result.failures.length})`
   );
   return result;
 }
@@ -37,14 +53,14 @@ export async function checkControl(payload, context) {
  * Rovo action handler for `run-audit`.
  * Runs all registered controls in parallel and returns an aggregated summary.
  *
- * @param {object} _payload
+ * @param {{ projectKey?: string }} payload
  * @param {object} context
  */
-export async function runAudit(_payload, context) {
-  const output = await executeAudit(context);
+export async function runAudit(payload, context) {
+  const output = await executeAudit({ ...context, projectKey: payload?.projectKey });
   const { summary } = output;
   console.log(
-    `[run-audit] pass=${summary.pass} fail=${summary.fail} missing_evidence=${summary.missing_evidence} error=${summary.error}`
+    `[run-audit] project=${output.projectKey || 'ALL'} pass=${summary.pass} fail=${summary.fail} missing_evidence=${summary.missing_evidence} error=${summary.error}`
   );
   return output;
 }
@@ -53,14 +69,14 @@ export async function runAudit(_payload, context) {
  * Rovo action handler for `generate-evidence-pack`.
  * Runs the full audit and publishes a Confluence Audit Evidence Pack page.
  *
- * @param {{ spaceKey?: string }} payload
+ * @param {{ spaceKey?: string, projectKey?: string }} payload
  * @param {object} context
  */
 export async function generateEvidencePack(payload, context) {
-  const audit = await executeAudit(context);
+  const audit = await executeAudit({ ...context, projectKey: payload?.projectKey });
   const result = await createEvidencePackPage(audit, payload?.spaceKey);
   console.log(
-    `[generate-evidence-pack] pageId=${result.pageId} space=${result.spaceKey} url=${result.pageUrl}`
+    `[generate-evidence-pack] pageId=${result.pageId} space=${result.spaceKey} project=${audit.projectKey || 'ALL'} url=${result.pageUrl}`
   );
   return result;
 }

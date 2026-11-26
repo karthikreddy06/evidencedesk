@@ -1,4 +1,4 @@
-import { getSiteBaseUrl, searchJiraIssues } from './jira-client.js';
+import { getSiteBaseUrl, normalizeProjectKey, scopeJql, searchJiraIssues } from './jira-client.js';
 import { buildControlResult } from './types.js';
 
 const TITLE = 'Segregation of duties on Done Change issues';
@@ -17,13 +17,12 @@ export const controlC4 = {
    * @returns {Promise<import('./types.js').ControlResult>}
    */
   async run(context) {
+    const projectKey = normalizeProjectKey(context?.projectKey);
+    const jql = scopeJql('statusCategory = Done AND issuetype = "Change"', projectKey);
+
     const [baseUrl, searchResult] = await Promise.all([
       getSiteBaseUrl(context),
-      searchJiraIssues('statusCategory = Done AND issuetype = "Change"', [
-        'summary',
-        'assignee',
-        'reporter',
-      ]),
+      searchJiraIssues(jql, ['summary', 'assignee', 'reporter']),
     ]);
 
     if (searchResult.jqlError) {
