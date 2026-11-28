@@ -50,7 +50,12 @@ EvidenceDesk includes a `rovo:mcp` module (`evidencedesk-mcp`) in `manifest.yml`
 - `run-audit` — run all controls (`C1`–`C5`) in parallel, optionally scoped by `projectKey`
 - `generate-evidence-pack` — run the full audit and publish a Confluence Audit Evidence Pack page, optionally scoped by `projectKey` and `spaceKey`
 
-Tools execute under the authenticated user's Atlassian permissions via Atlassian's Rovo MCP infrastructure (`https://mcp.atlassian.com/v2/mcp` with OAuth 2.1) or Rovo Studio, subject to site/organization admin enablement.
+### Endpoint & Access (Preview — Not Yet Verified)
+
+- **MCP Endpoint:** `https://mcp.atlassian.com/forge/6e91cdf2-96d1-48a2-ac13-4eace341769d` (derived from `app.id` in `manifest.yml`, using OAuth 2.1 under the authenticated user's Atlassian permissions)
+- **Status:** External MCP client access is **Preview and not yet verified** until confirmed end-to-end by a site admin.
+- **Enabling External Exposure:** External exposure is **off by default**. A site admin must enable it in Atlassian Administration:
+  **Atlassian Administration** > **Apps** > **Sites** > select your site > **Connected apps** > **EvidenceDesk** > **App details** > turn on the MCP tools.
 
 ## Architecture
 
